@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
+from sklearn.metrics.pairwise import linear_kernel, cosine_similarity
 
 @st.cache
 def load_data():
@@ -22,7 +22,7 @@ def load_data():
     # Randomize the data between each streaming platform and drop NA values
     #subset_data = all_data[['type', 'title', 'rating', 'description', 'platform']].sample(frac=1).reset_index(drop=True).dropna()
     #subset_data = disney_data[['type', 'title', 'rating', 'description', 'platform']].dropna()
-    subset_data = all_data[['type', 'title', 'rating', 'description', 'platform']].sample(frac=1).reset_index(drop=True).dropna()
+    subset_data = all_data[['type', 'title', 'rating', 'description', 'platform']].reset_index(drop=True).dropna()
 
     return subset_data
 
@@ -35,19 +35,17 @@ def load_tfidf_matrix(data):
 
 @st.cache
 def load_cosine_similarity(tfidf_matrix):
-    cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+    # cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+    cosine_sim = cosine_similarity(tfidf_matrix)
     return cosine_sim
 
 def get_recommendations(title, data, cosine_sim, indices):
     cpy = data.copy()
     idx = indices[title]
     sim_scores = list(enumerate(cosine_sim[idx]))
-    # print(sim_scores)
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-    # sim_scores = sim_scores[1:11]
     movie_indices = [i[0] for i in sim_scores]
-    cpy['sim_scores'] = sim_scores
-    return cpy[['title', 'type', 'description', 'platform']].iloc[movie_indices]
+    return sim_scores, cpy[['title', 'type', 'description', 'platform']].iloc[movie_indices]
 
 st.title("Streaming Platform Recommendation System")
 
@@ -61,7 +59,7 @@ indices = pd.Series(data.index, index=data['title']).drop_duplicates()
 
 user_input = st.selectbox("Pick a Movie or TV Show from Netflix, Amazon Prime, Disney+, or Hulu here:", data['title'])
 
-results = get_recommendations(user_input, data, cosine_sim, indices)
+scores, results = get_recommendations(user_input, data, cosine_sim, indices)
 st.header(f"Use the options below to filter your results for {user_input}")
 st.subheader(f"Streaming Platform(s):")
 col1, col2 = st.columns(2)
@@ -91,9 +89,17 @@ if not movie:
 st.write("***")
 
 count = 0
+score_index = 0
 for index, row in results.iterrows():
-    st.subheader(f"Rank {count+1}: {row['title']} ({row['type']} on {row['platform']})\nDescription: {row['description']}")
+    if user_input == row['title']: 
+        score_index += 1
+        continue
+    score = scores[score_index][1]
+    st.subheader(f"Rank {count+1}: {row['title']} ({row['type']} on {row['platform']})")
+    st.write(f"**Similarity Score:** {round(score * 100, 2)}%")
+    st.write(f"**Description:** {row['description']}")
     count += 1
+    score_index += 1
     if count == 10:
         break
 
